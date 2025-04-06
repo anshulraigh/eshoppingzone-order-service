@@ -16,8 +16,9 @@ public class Order {
     private Long id;
 
     private Long userId;
-    private String product;
+    private Long productId;
+    private String productName;
+    private Double price;       // at time of order
     private Integer quantity;
-    private Double price;
     private String status;
 }
