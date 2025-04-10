@@ -16,6 +16,19 @@ public class ProductClientFallback implements ProductClient {
 
     @Override
     public ResponseEntity<?> updateProduct(Long id, Product product) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("Product service is unavailable");
+        System.err.println("Fallback: Unable to update product");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body("Product service is unavailable for updating product");
+    }
+
+    @Override
+    public boolean reduceProductQuantity(Long id, int quantity) {
+        System.err.println("Fallback: Unable to reduce product quantity");
+        return false;
+    }
+
+    @Override
+    public void restoreProductQuantity(Long id, int quantity) {
+        System.err.println("Fallback: Unable to restore product quantity");
     }
 }

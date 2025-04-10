@@ -13,4 +13,11 @@ public interface ProductClient {
 
     @PutMapping("/products/{id}")
     ResponseEntity<?> updateProduct(@PathVariable("id") Long id, @RequestBody Product product);
+
+    @PutMapping("/products/{id}/reduce-stock")
+    boolean reduceProductQuantity(@PathVariable Long id, @RequestParam int quantity);
+
+    @PutMapping("/products/{id}/restore-stock")
+    void restoreProductQuantity(@PathVariable Long id, @RequestParam int quantity);
+
 }
