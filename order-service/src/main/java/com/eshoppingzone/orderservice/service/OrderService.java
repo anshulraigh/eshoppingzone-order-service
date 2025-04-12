@@ -1,10 +1,14 @@
 package com.eshoppingzone.orderservice.service;
 
+import com.eshoppingzone.orderservice.client.PaymentClient;
 import com.eshoppingzone.orderservice.client.ProductClient;
 import com.eshoppingzone.orderservice.config.UserContext;
+import com.eshoppingzone.orderservice.dto.PaymentRequest;
+import com.eshoppingzone.orderservice.dto.PaymentResponse;
 import com.eshoppingzone.orderservice.dto.Product;
 import com.eshoppingzone.orderservice.model.Order;
 import com.eshoppingzone.orderservice.repository.OrderRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
 public class OrderService {
 
@@ -20,6 +25,9 @@ public class OrderService {
 
     @Autowired
     ProductClient productClient;
+
+    @Autowired
+    PaymentClient paymentClient;
 
     @Transactional
     public Order placeOrder(Order order) {
@@ -41,10 +49,33 @@ public class OrderService {
             order.setPrice(product.getPrice());
             order.setStatus("PENDING");
 
-            return orderRepository.save(order);
+            Order savedOrder = orderRepository.save(order);
+
+            PaymentRequest paymentRequest = new PaymentRequest(
+                    savedOrder.getId(),
+                    userId,
+                    savedOrder.getPrice() * savedOrder.getQuantity(),
+                    "card"
+            );
+
+            PaymentResponse paymentResponse = paymentClient.makePayment(paymentRequest);
+
+            if (!"PENDING".equalsIgnoreCase(paymentResponse.getStatus())) {
+                productClient.restoreProductQuantity(product.getId(), order.getQuantity());
+                throw new RuntimeException("Payment initiation failed: " + paymentResponse.getMessage());
+            }
+
+            savedOrder.setPaymentLink(paymentResponse.getPaymentLink());
+            Order updatedOrder = orderRepository.save(savedOrder);
+
+            verifyAndUpdatePaymentStatus(updatedOrder);
+
+            return updatedOrder;
 
         } catch (Exception e) {
-            productClient.restoreProductQuantity(product.getId(), order.getQuantity());
+            if (order.getId() != null) {
+                productClient.restoreProductQuantity(product.getId(), order.getQuantity());
+            }
             throw new RuntimeException("Order placement failed: " + e.getMessage());
         }
     }
@@ -67,15 +98,18 @@ public class OrderService {
         if (orderOpt.isPresent()) {
             Order order = orderOpt.get();
             if (isAdmin(role) || isOwner(order, userId)) {
+                if ("PENDING".equalsIgnoreCase(order.getStatus())) {
+                    verifyAndUpdatePaymentStatus(order);
+                }
                 return Optional.of(order);
             } else {
                 throw new RuntimeException("Unauthorized access to order");
             }
-        } else {
-            throw new RuntimeException("Order not found");
         }
+        return Optional.empty();
     }
 
+    @Transactional
     public Order updateOrderStatus(Long orderId, String status) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
@@ -91,6 +125,7 @@ public class OrderService {
         }
     }
 
+    @Transactional
     public void cancelOrder(Long orderId) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
@@ -99,9 +134,26 @@ public class OrderService {
                 .orElseThrow(() -> new RuntimeException("Order not found"));
 
         if (isAdmin(role) || isOwner(order, userId)) {
+            if ("PENDING".equalsIgnoreCase(order.getStatus())) {
+                productClient.restoreProductQuantity(order.getProductId(), order.getQuantity());
+            }
             orderRepository.deleteById(orderId);
         } else {
             throw new RuntimeException("Unauthorized to cancel this order");
+        }
+    }
+
+    private void verifyAndUpdatePaymentStatus(Order order) {
+        try {
+            log.info("Verifying payment status for order: {}", order.getId());
+            PaymentResponse paymentStatus = paymentClient.getPaymentStatus(order.getId());
+            if ("SUCCESS".equalsIgnoreCase(paymentStatus.getStatus())) {
+                log.info("Updating order status to PLACED for order: {}", order.getId());
+                order.setStatus("PLACED");
+                orderRepository.save(order);
+            }
+        } catch (Exception e) {
+            log.error("Failed to verify payment status for order: {}", order.getId(), e);
         }
     }
 

@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -40,8 +42,15 @@ public class OrderController {
 
     @Operation(summary = "Update the status of an order")
     @PutMapping("/{id}/status")
-    public Order updateOrderStatus(@PathVariable Long id, @RequestParam String status) {
-        return orderService.updateOrderStatus(id, status);
+    public ResponseEntity<?> updateOrderStatus(@PathVariable Long id,
+                                               @RequestParam String status) {
+        try {
+            Order updatedOrder = orderService.updateOrderStatus(id, status);
+            return ResponseEntity.ok(updatedOrder);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Failed to update order status");
+        }
     }
 
     @Operation(summary = "Cancel an order")
